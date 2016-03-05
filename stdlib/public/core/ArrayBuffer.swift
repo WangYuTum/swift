@@ -193,7 +193,7 @@ extension _ArrayBuffer {
       // Could be sped up, e.g. by using
       // enumerateObjectsAtIndexes:options:usingBlock: in the
       // non-native case.
-      for i in subRange {
+      for i in RangeOfStrideable(subRange) {
         _typeCheckSlowPath(i)
       }
     }
@@ -224,7 +224,7 @@ extension _ArrayBuffer {
     
     // Make another pass to retain the copied objects
     var result = target
-    for _ in bounds {
+    for _ in RangeOfStrideable(bounds) {
       result.initialize(with: result.pointee)
       result += 1
     }

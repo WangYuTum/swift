@@ -907,7 +907,7 @@ internal struct _InitializeMemoryFromCollection<
     var q = newValues.startIndex
     for _ in 0..<count {
       p.initialize(with: newValues[q])
-      q = q.successor()
+      newValues._nextInPlace(&q)
       p += 1
     }
     _expectEnd(q, newValues)
