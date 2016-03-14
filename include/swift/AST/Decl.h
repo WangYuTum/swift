@@ -761,6 +761,10 @@ public:
 
   Optional<StringRef> getGroupName() const;
 
+  Optional<StringRef> getSourceFileName() const;
+
+  Optional<unsigned> getSourceOrder() const;
+
   /// \returns the brief comment attached to this declaration.
   StringRef getBriefComment() const;
 
@@ -1264,9 +1268,8 @@ public:
     if (WhereLoc.isInvalid())
       return SourceRange();
 
-    return SourceRange(WhereLoc,
-                       Requirements[FirstTrailingWhereArg-1].getSecondTypeLoc()
-                         .getSourceRange().End);
+    auto endLoc = Requirements[FirstTrailingWhereArg-1].getSourceRange().End;
+    return SourceRange(WhereLoc, endLoc);
   }
 
   /// Retrieve the source range covering the trailing where clause.
@@ -2342,7 +2345,11 @@ class GenericTypeDecl : public TypeDecl, public DeclContext {
   /// \c GenericParams. However, we likely want to make \c GenericParams
   /// the parsed representation, and not part of the module file.
   GenericSignature *GenericSig = nullptr;
-  //friend class DeclContext;
+
+  /// \brief Whether or not the generic signature of the type declaration is
+  /// currently being validated.
+  // TODO: Merge into GenericSig bits.
+  unsigned ValidatingGenericSignature = false;
 
 public:
   GenericTypeDecl(DeclKind K, DeclContext *DC,
@@ -2379,7 +2386,15 @@ public:
   GenericSignature *getGenericSignature() const {
     return GenericSig;
   }
-
+  
+  void setIsValidatingGenericSignature(bool ivgs = true) {
+    ValidatingGenericSignature = ivgs;
+  }
+  
+  bool IsValidatingGenericSignature() {
+    return ValidatingGenericSignature;
+  }
+  
   // Resolve ambiguity due to multiple base classes.
   using TypeDecl::getASTContext;
   using DeclContext::operator new;
@@ -2387,6 +2402,10 @@ public:
 
   static bool classof(const DeclContext *C) {
     return C->getContextKind() == DeclContextKind::GenericTypeDecl;
+  }
+  static bool classof(const Decl *D) {
+    return D->getKind() >= DeclKind::First_GenericTypeDecl &&
+           D->getKind() <= DeclKind::Last_GenericTypeDecl;
   }
 };
 
@@ -2398,7 +2417,7 @@ public:
 ///
 /// TypeAliasDecl's always have 'MetatypeType' type.
 ///
-class TypeAliasDecl : public TypeDecl {
+class TypeAliasDecl : public GenericTypeDecl {
   /// The type that represents this (sugared) name alias.
   mutable NameAliasType *AliasTy;
 
@@ -2407,7 +2426,8 @@ class TypeAliasDecl : public TypeDecl {
 
 public:
   TypeAliasDecl(SourceLoc TypeAliasLoc, Identifier Name,
-                SourceLoc NameLoc, TypeLoc UnderlyingTy, DeclContext *DC);
+                SourceLoc NameLoc, TypeLoc UnderlyingTy,
+                GenericParamList *GenericParams, DeclContext *DC);
 
   SourceLoc getStartLoc() const { return TypeAliasLoc; }
   SourceRange getSourceRange() const;
@@ -2435,6 +2455,13 @@ public:
 
   static bool classof(const Decl *D) {
     return D->getKind() == DeclKind::TypeAlias;
+  }
+  static bool classof(const GenericTypeDecl *D) {
+    return D->getKind() == DeclKind::TypeAlias;
+  }
+  static bool classof(const DeclContext *C) {
+    auto GTD = dyn_cast<GenericTypeDecl>(C);
+    return GTD && classof(GTD);
   }
 };
 
@@ -2661,11 +2688,7 @@ class NominalTypeDecl : public GenericTypeDecl, public IterableDeclContext {
   ExtensionDecl *LastExtension = nullptr;
 
   /// \brief The generation at which we last loaded extensions.
-  unsigned ExtensionGeneration: 28;
-                          
-  /// \brief Whether or not the generic signature of the type declaration is
-  /// currently being validated.
-  unsigned ValidatingGenericSignature: 1;
+  unsigned ExtensionGeneration: 29;
   
   /// \brief Whether or not this declaration has a failable initializer member,
   /// and whether or not we've actually searched for one.
@@ -2750,7 +2773,6 @@ protected:
     NominalTypeDeclBits.HasDelayedMembers = false;
     NominalTypeDeclBits.AddedImplicitInitializers = false;
     ExtensionGeneration = 0;
-    ValidatingGenericSignature = false;
     SearchedForFailableInits = false;
     HasFailableInits = false;
     HaveConformanceLoader = false;
@@ -2781,14 +2803,6 @@ public:
   void setMemberLoader(LazyMemberLoader *resolver, uint64_t contextData);
   bool hasLazyMembers() const {
     return IterableDeclContext::isLazy();
-  }
-  
-  void setIsValidatingGenericSignature(bool ivgs = true) {
-    ValidatingGenericSignature = ivgs;
-  }
-  
-  bool IsValidatingGenericSignature() {
-    return ValidatingGenericSignature;
   }
   
   /// \brief Returns true if this decl contains delayed value or protocol
@@ -5256,7 +5270,9 @@ public:
         static_cast<unsigned>(ElementRecursiveness::NotRecursive);
   }
 
-  void computeType();
+  /// \returns false if there was an error during the computation rendering the
+  /// EnumElementDecl invalid, true otherwise.
+  bool computeType();
 
   bool hasArgumentType() const { return !ArgumentType.getType().isNull(); }
   Type getArgumentType() const { return ArgumentType.getType(); }

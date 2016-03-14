@@ -1884,6 +1884,14 @@ Decl *ModuleFile::getDecl(DeclID DID, Optional<DeclContext *> ForcedContext) {
         break;
       }
 
+      case decls_block::CDecl_DECL_ATTR: {
+        bool isImplicit;
+        serialization::decls_block::CDeclDeclAttrLayout::readRecord(
+            scratch, isImplicit);
+        Attr = new (ctx) CDeclAttr(blobData, isImplicit);
+        break;
+      }
+
       case decls_block::Alignment_DECL_ATTR: {
         bool isImplicit;
         unsigned alignment;
@@ -2113,8 +2121,13 @@ Decl *ModuleFile::getDecl(DeclID DID, Optional<DeclContext *> ForcedContext) {
     if (declOrOffset.isComplete())
       return declOrOffset;
 
+    auto genericParams = maybeReadGenericParams(DC, DeclTypeCursor);
+    if (declOrOffset.isComplete())
+      return declOrOffset;
+
     auto alias = createDecl<TypeAliasDecl>(SourceLoc(), getIdentifier(nameID),
-                                           SourceLoc(), underlyingType, DC);
+                                           SourceLoc(), underlyingType,
+                                           genericParams, DC);
     declOrOffset = alias;
 
     alias->computeType();
@@ -4109,7 +4122,15 @@ void ModuleFile::finishNormalConformance(NormalProtocolConformance *conformance,
     assert(second || first->getAttrs().hasAttribute<OptionalAttr>() ||
            first->getAttrs().isUnavailable(ctx));
     (void) ctx;
-    witnesses.insert(std::make_pair(first, second));
+    unsigned substitutionCount = *rawIDIter++;
+    SmallVector<Substitution, 4> substitutions;
+    while (substitutionCount--) {
+      auto sub = maybeReadSubstitution(DeclTypeCursor);
+      assert(sub.hasValue());
+      substitutions.push_back(*sub);
+    }
+    ConcreteDeclRef witness(first->getASTContext(), second, substitutions);
+    witnesses.insert(std::make_pair(first, witness));
   }
   assert(rawIDIter <= rawIDs.end() && "read too much");
 

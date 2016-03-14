@@ -2077,7 +2077,7 @@ public:
       require(toCanTy.getClassOrBoundGenericClass(),
               "downcast must convert to a class type");
       require(SILType::getPrimitiveObjectType(fromCanTy).
-              isSuperclassOf(SILType::getPrimitiveObjectType(toCanTy)),
+              isBindableToSuperclassOf(SILType::getPrimitiveObjectType(toCanTy)),
               "downcast must convert to a subclass");
     }
   }
@@ -2231,7 +2231,7 @@ public:
                          ->getInstanceType());
       require(instTy->getClassOrBoundGenericClass(),
               "upcast must convert a class metatype to a class metatype");
-      require(instTy->isSuperclassOf(opInstTy, nullptr),
+      require(instTy->isExactSuperclassOf(opInstTy, nullptr),
               "upcast must cast to a superclass or an existential metatype");
       return;
     }
@@ -2257,7 +2257,7 @@ public:
 
     require(ToTy.getClassOrBoundGenericClass(),
             "upcast must convert a class instance to a class type");
-    require(ToTy.isSuperclassOf(FromTy),
+    require(ToTy.isExactSuperclassOf(FromTy),
             "upcast must cast to a superclass");
   }
 
@@ -2546,15 +2546,18 @@ public:
       SILValue casevalue;
       SILValue result;
       std::tie(casevalue, result) = I->getCase(i);
-      auto  *il = dyn_cast<IntegerLiteralInst>(casevalue);
-      require(il,
-              "select_value case operands should refer to integer literals");
-      APInt elt = il->getValue();
+      
+      if (!isa<SILUndef>(casevalue)) {
+        auto  *il = dyn_cast<IntegerLiteralInst>(casevalue);
+        require(il,
+                "select_value case operands should refer to integer literals");
+        APInt elt = il->getValue();
 
-      require(!seenCaseValues.count(elt),
-              "select_value dispatches on same case value more than once");
+        require(!seenCaseValues.count(elt),
+                "select_value dispatches on same case value more than once");
 
-      seenCaseValues.insert(elt);
+        seenCaseValues.insert(elt);
+      }
 
       requireSameType(I->getOperand()->getType(), casevalue->getType(),
                       "select_value case value must match type of operand");

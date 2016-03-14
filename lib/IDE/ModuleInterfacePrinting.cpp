@@ -259,7 +259,7 @@ void swift::ide::printSubmoduleInterface(
       NoImportSubModules.insert(*It);
     }
   }
-
+  llvm::StringMap<std::vector<Decl*>> FileRangedDecls;
   // Separate the declarations that we are going to print into different
   // buckets.
   for (Decl *D : Decls) {
@@ -328,13 +328,32 @@ void swift::ide::printSubmoduleInterface(
       if (!GroupNames.empty()){
         if (auto Target = D->getGroupName()) {
           if (std::find(GroupNames.begin(), GroupNames.end(),
-                        Target.getValue()) != GroupNames.end())
-             SwiftDecls.push_back(D);
+                        Target.getValue()) != GroupNames.end()) {
+            FileRangedDecls.insert(std::make_pair(D->getSourceFileName().getValue(),
+              std::vector<Decl*>())).first->getValue().push_back(D);
+          }
         }
         continue;
       }
       // Add Swift decls if we are printing the top-level module.
       SwiftDecls.push_back(D);
+    }
+  }
+  if (!GroupNames.empty()) {
+    assert(SwiftDecls.empty());
+    for (auto &Entry : FileRangedDecls) {
+      auto &DeclsInFile = Entry.getValue();
+      std::sort(DeclsInFile.begin(), DeclsInFile.end(),
+                [](Decl* LHS, Decl *RHS) {
+                  assert(LHS->getSourceOrder().hasValue());
+                  assert(RHS->getSourceOrder().hasValue());
+                  return LHS->getSourceOrder().getValue() <
+                         RHS->getSourceOrder().getValue();
+                });
+
+      for (auto D : DeclsInFile) {
+        SwiftDecls.push_back(D);
+      }
     }
   }
 
@@ -446,17 +465,23 @@ void swift::ide::printSubmoduleInterface(
             continue;
 
           // Print synthesized extensions.
-          std::vector<ExtensionDecl*> scratch;
-          SynthesizedExtensionAnalyzer Analyzer(NTD);
+          SynthesizedExtensionAnalyzer Analyzer(NTD, AdjustedOptions);
           AdjustedOptions.initArchetypeTransformerForSynthesizedExtensions(NTD,
                                                                     &Analyzer);
-          for (auto ET : Analyzer.getAllSynthesizedExtensions(scratch)) {
-            if (!shouldPrint(ET, AdjustedOptions))
-              continue;
-            Printer << "\n";
-            ET->print(Printer, AdjustedOptions);
-            Printer << "\n";
-          }
+          Analyzer.forEachSynthesizedExtensionMergeGroup(
+            [&](ArrayRef<ExtensionDecl*> Decls){
+              for (auto ET : Decls) {
+                AdjustedOptions.TransformContext->shouldOpenExtension =
+                  Decls.front() == ET;
+                AdjustedOptions.TransformContext->shouldCloseExtension =
+                  Decls.back() == ET;
+                if (AdjustedOptions.TransformContext->shouldOpenExtension)
+                  Printer << "\n";
+                ET->print(Printer, AdjustedOptions);
+                if (AdjustedOptions.TransformContext->shouldCloseExtension)
+                  Printer << "\n";
+            }
+          });
           AdjustedOptions.clearArchetypeTransformerForSynthesizedExtensions();
         }
       }

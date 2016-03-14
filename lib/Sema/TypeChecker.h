@@ -399,6 +399,7 @@ withoutContext(TypeResolutionOptions options) {
 /// the OBJC_ATTR_SELECT macro in DiagnosticsSema.def.
 enum class ObjCReason {
   DoNotDiagnose,
+  ExplicitlyCDecl,
   ExplicitlyDynamic,
   ExplicitlyObjC,
   ExplicitlyIBOutlet,
@@ -953,7 +954,7 @@ public:
   /// \param nominal The generic type.
   ///
   /// \returns true if an error occurred, or false otherwise.
-  bool validateGenericTypeSignature(NominalTypeDecl *nominal);
+  bool validateGenericTypeSignature(GenericTypeDecl *nominal);
 
   /// Check the generic parameters in the given generic parameter list (and its
   /// parent generic parameter lists) according to the given resolver.
@@ -1549,7 +1550,7 @@ public:
                                    LookupTypeResult &lookup);
 
   /// Emit a diagnostic for references to declarations that have been
-  /// marked as unavailable, either through "unavailable" or "obsoleted=".
+  /// marked as unavailable, either through "unavailable" or "obsoleted:".
   bool diagnoseExplicitUnavailability(const ValueDecl *D,
                                       SourceRange R,
                                       const DeclContext *DC);

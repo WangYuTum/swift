@@ -323,7 +323,7 @@ parse_operator:
       // Parse a type after the 'is' token instead of an expression.
       ParserResult<Expr> is = parseExprIs();
       if (is.isNull() || is.hasCodeCompletion())
-        return nullptr;
+        return is;
       
       // Store the expr itself as a placeholder RHS. The real RHS is the
       // type parameter stored in the node itself.
@@ -338,7 +338,7 @@ parse_operator:
     case tok::kw_as: {
       ParserResult<Expr> as = parseExprAs();
       if (as.isNull() || as.hasCodeCompletion())
-        return nullptr;
+        return as;
         
       // Store the expr itself as a placeholder RHS. The real RHS is the
       // type parameter stored in the node itself.
@@ -1587,7 +1587,7 @@ Expr *Parser::parseExprIdentifier() {
     hasGenericArgumentList = !args.empty();
   }
   
-  ValueDecl *D = lookupInScope(name.getBaseName());
+  ValueDecl *D = lookupInScope(name);
   // FIXME: We want this to work: "var x = { x() }", but for now it's better
   // to disallow it than to crash.
   if (D) {
